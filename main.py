@@ -5,11 +5,7 @@ import pygame
 import networkx as nx
 import numpy as np
 import pandas
-
-# G = nx.grid_graph(dim=(3,3))
-# print(nx.to_pandas_adjacency(G))
-# print(nx.to_dict_of_lists(G))
-# print(nx.to_dict_of_dicts(G))
+from pyparsing import col
 
 WHITE = (255, 255, 255)
 GREEN = (0, 255, 0)
@@ -25,6 +21,149 @@ def getNodeDataByName(name,nodes):
         if node['name'] == name:
             return node
 
+class Node:
+    name = ""
+    nodeCoords = ()
+    rectCoords = ()
+    color = ()
+    neighbors = []
+    edges = []
+    cellSize = 5       
+
+    def __init__(self,name,nodes,matrix,cellSize):
+        self.name = name
+        self.nodeCoords = ()
+        self.rectCoords = ()
+        self.color = BLUE
+        neighbors = []
+        self.cellSize = cellSize
+
+        #generateNeighbors()
+        adjData = matrix[self.name]
+        adjDF = pd.DataFrame(adjData)
+        edgeData = adjDF.loc[adjDF.iloc[:, 0] == 1].index.values
+        for edge in edgeData:
+            for node in nodes:
+                if node.name == edge:
+                    self.edges.append(edge)
+                    self.neighbors.append(node)
+                    node.edges.append(edge)
+                    node.neighbors.append(self)
+                    # pygame.draw.line(display_surface,BLACK,self.nodeCoords,node.nodeCoords)
+                    break
+        
+    
+    def assignRandomPos(self,nodesToAvoid):
+        radius = self.cellSize
+        nodeInGoodPosition = True
+        self.nodeCoords = (float(random.random())*0.9*X + 0.05*X, float(random.random()) * 0.9*Y + 0.05*Y)
+        self.rectCoords = (self.nodeCoords[0] + (-0.45 * self.cellSize),
+                            self.nodeCoords[1] + (-0.45 * self.cellSize), .9 * self.cellSize,
+                            .9 * self.cellSize)
+        if len(nodesToAvoid) < 2:
+            return
+        for j in range(len(nodesToAvoid)):
+            distance = np.linalg.norm(np.subtract(nodesToAvoid[j].nodeCoords, self.nodeCoords))
+            if distance < radius:
+                self.assignRandomPos(nodesToAvoid)
+                return
+
+class Widget():
+    centerCoords = ()
+    checkpoints = []
+    vector = ()
+    direction = ()
+    shift = ()
+    minLerpCounter = 0
+    counter = minLerpCounter
+    maxLerpCounter = 1000
+    lerpFrequency = 20
+    size = 5
+    movement = 10
+
+    triangleCoords = [[1,0],
+                    [np.cos(np.pi *(2/3)), np.sin(np.pi*(2/3))],
+                    [np.cos(np.pi *(4/3)), np.sin(np.pi*(4/3))]]
+    
+    def __init__(self,size, movement, checkpoints):
+        self.checkpoints = checkpoints
+        self.centerCoords = checkpoints[0].nodeCoords
+        self.minLerpCounter = 0
+        counter = self.minLerpCounter
+        self.maxLerpCounter = 1000
+        self.lerpFrequency = 20
+        self.size = 5
+        self.movement = 10
+
+        self.vector = np.subtract(self.checkpoints[0].nodeCoords,self.checkpoints[1].nodeCoords)
+        self.direction = self.vector / np.linalg.norm(self.vector)
+        self.shift = np.multiply(movement, self.direction)
+    
+        for i in range(len(self.triangleCoords)):
+            self.triangleCoords[i] = [self.triangleCoords[i][0] * size, self.triangleCoords[i][1]*size]
+            self.triangleCoords[i] = [self.triangleCoords[i][0] + self.centerCoords[0][0], self.triangleCoords[i][1]+self.centerCoords[0][1]]
+
+    def animateWidget(self):
+        raise NotImplementedError
+
+    def updateWidget(self):
+        self.counter +=1
+        for i in self.triangleCoords:
+            for j in self.triangleCoords[i]:
+                x = self.triangleCoords[i][j][0]
+                y = self.triangleCoords[i][j][1]
+                self.triangleCoords[i][j] = pygame.math.Vector2((x,y)).lerp(self.checkpoints[1].nodeCoords,self.counter / self.maxLerpCounter)
+
+    def drawWidget(self,display_surface):
+        pygame.draw.polygon(display_surface, BLACK, self.triangleCoords)
+class Path():
+    parentNodes = []
+    pathNodes = {}
+    pathEdges = []
+    pathWidgets = {}
+    animators = []
+
+    def __init__(self,nodes,start=()):
+        parentNodes = nodes
+        pathNodes = {}
+        pathEdges = []
+        pathWidgets = {}
+        animators = []
+        self.addNode(start)
+        if (start == ()):
+            self.pathNodes[0] = nodes[random.randint(0,len(nodes)-1)]
+        print(self.pathNodes)
+    
+    def getLast(self,negIndex=1):
+        return self.pathNodes[len(self.pathNodes)-negIndex]
+
+    def addNode(self,node):
+        self.pathNodes[len(self.pathNodes)] = node
+        if len(self.pathNodes)>1:
+            lastEdge = [self.getLast(1).nodeCoords,self.getLast(2).nodeCoords]
+            self.pathEdges.append([self.getLast(1),self.getLast(2)])
+            self.pathWidgets[len(self.pathEdges)] = []
+            # self.animators.append(animatePath(lastEdge,20,10))
+            # self.animators[-1].__next__()
+
+    def randomStep(self):
+        print(self.pathNodes)
+        nextStep = self.getLast(1).neighbors[random.randint(0,len(self.getLast(1).neighbors)-1)]
+        self.addNode(nextStep)
+        self.updateColors()
+
+    def updateColors(self):
+        for node in self.pathNodes:
+            index = self.pathNodes.index(node)
+            r = (((index + 1) / len(path))* SPECIALCOLOR[0]) + (((len(path)-index - 1) / len(path))* BLUE[0])
+            g = (((index + 1) / len(path))* SPECIALCOLOR[1]) + (((len(path)-index - 1) / len(path))* BLUE[1])
+            b = (((index + 1) / len(path))* SPECIALCOLOR[2]) + (((len(path)-index - 1) / len(path))* BLUE[2])
+            node.color = (r,g,b)
+
+    def genAnimationWidgets(self, size, movement):
+        for edge in self.pathWidgets.index:
+            self.pathWidgets[edge].append(Widget(size,movement,edge[0].nodeCoords))
+
 def generateGraph(k):
     dimG = 1
     G = nx.grid_graph(dim=(k, k))
@@ -34,65 +173,25 @@ def generateGraph(k):
     for i in range(int(np.ceil(0.5 * len(matrix)))):
         if i * i >= len(matrix):
             dimG = i
-            # print(dimG)
             break
 
-
-    nodeData = {'name': "",
-                'adjData': "",
-                'nodeCoords': (),
-                'rectCoords': (),
-                'color': "",
-                'edgeData' : [],
-                'edgeVectors':{}}
     nodes = []
-
     for i in range(len(matrix)):
-        nodeData['name'] = matrix.index[i]
-        nodeData['adjData'] = matrix[nodeData['name']]
         col = 1 + (i % dimG)
         row = 1 + np.floor(i / dimG)
         cellSize = min(.8 * X, .8 * Y) / dimG
 
-        # nodeData['nodeCoords'] = ((float(col * cellSize), float(row * cellSize)))
-        # nodeData['nodeCoords'] = (float(random.random()) * dimG * cellSize, float(random.random()) * dimG * cellSize)
-        def assignRandomPos():
-            radius = cellSize
-            nodeInGoodPosition = True
-            nodeData['nodeCoords'] = (float(random.random())*0.9*X + 0.05*X, float(random.random()) * 0.9*Y + 0.05*Y)
-            if len(nodes) < 2:
-                return
-            for j in range(len(nodes)):
-                distance = np.linalg.norm(np.subtract(nodes[j]['nodeCoords'], nodeData['nodeCoords']))
-                print(distance)
-                if distance < radius:
-                    assignRandomPos()
-                    return
-
-        assignRandomPos()
-
-        nodeData['rectCoords'] = (nodeData['nodeCoords'][0] + (-0.45 * cellSize),
-                                       nodeData['nodeCoords'][1] + (-0.45 * cellSize), .9 * cellSize,
-                                       .9 * cellSize)
-        nodeData['color'] = BLUE
-
-        adjDF = pd.DataFrame(nodeData['adjData'])
-        nodeData['edgeData'] = adjDF.loc[adjDF.iloc[:, 0] == 1].index.values
-
-        nodes.append(nodeData.copy())
-
-    nodesDF = pd.DataFrame(nodes)
-    for node in nodes:
-        for edge in node['edgeData']:
-            node['edgeVectors'][edge] = (node['nodeCoords'], (getNodeDataByName(edge,nodes)['nodeCoords']))
-            # print(node['edgeVectors'])
+        newNode = Node(matrix.index[i],nodes,matrix,cellSize)
+        newNode.assignRandomPos(nodes)
+        nodes.append(newNode)
+    
     return nodes
 
 def drawGraph(nodes,pathData, display_surface):
     for node in nodes:
-        pygame.draw.rect(display_surface, node['color'], node['rectCoords'])
-        for edge in node['edgeData']:
-            pygame.draw.line(display_surface,(0,0,0),node['edgeVectors'][edge][0], node['edgeVectors'][edge][1])
+        pygame.draw.rect(display_surface, node.color, node.rectCoords)
+        for neighbor in node.neighbors:
+            pygame.draw.line(display_surface,(0,0,0),node.nodeCoords,neighbor.nodeCoords)
 
     font = pygame.font.Font('freesansbold.ttf', 32)
     try:
@@ -129,99 +228,9 @@ def drawGraph(nodes,pathData, display_surface):
 #     if mode == "ALL":
 #         for index in pathData:
 
-def animatePath(coords,size,movement, display_surface):
-    if len(coords) < 2:
-        return
-
-    vector = np.subtract(coords[1],coords[0])
-    direction = vector / np.linalg.norm(vector)
-    shift = np.multiply(movement, direction)
-    # print(shift)
-
-    triangleCoords = [[1,0],
-                      [np.cos(np.pi *(2/3)), np.sin(np.pi*(2/3))],
-                      [np.cos(np.pi *(4/3)), np.sin(np.pi*(4/3))]]
-    # print(triangleCoords)
-    for i in range(len(triangleCoords)):
-        triangleCoords[i] = [triangleCoords[i][0] * size, triangleCoords[i][1]*size]
-        triangleCoords[i] = [triangleCoords[i][0] + coords[0][0], triangleCoords[i][1]+coords[0][1]]
-
-    widgets = {}
-    widgets['coords'] = []
-    widgets['counters'] = [0]
-    widgets['index'] = []
-    COUNTERMAX = 1000
-    FREQUENCY = 20
-    try:
-        while True:
-            if widgets['counters'][0] % FREQUENCY == 0:
-                widgets['counters'].append(0)
-                widgets['coords'].append(triangleCoords)
-                widgets['index'].append(len(widgets['coords']) - 1)
-            for i in range(len(widgets['coords'])):
-                for j in range(len(widgets['coords'][i])):
-                    x = widgets['coords'][i][j][0]
-                    y = widgets['coords'][i][j][1]
-                    # print(x,y)
-                    widgets['coords'][i][j] = pygame.math.Vector2((x,y)).lerp(coords[1],widgets['counters'][i]/COUNTERMAX)
-                    widgets['counters'][i] +=1
-                    if widgets['counters'][i] >= COUNTERMAX:
-                        return
-                    # # print(widget)
-                    # for i in range(len(widgets['coords'][k])):
-                    #     widgets['coords'][i] = [widgets['coords'][i][0] + shift[0], widgets['coords'][i][1]+shift[1]]
-                    # print(widget)
-                    pygame.draw.polygon(display_surface, BLACK, widgets['coords'][i])
-            (yield)
-    except GeneratorExit:
-        return
-
 def drawClock(text, display_surface):
     font = pygame.font.SysFont('Consolas', 30)
     display_surface.blit(font.render(text, True, (0, 0, 0)), (0.15 * X, 0.9 * Y))
-
-def randomStep(pathData, nodes, display_surface):
-    if not pathData:
-        pathData['path'] = {}
-        pathData['pathString'] = ""
-        pathData['animators'] = []
-        pathData['pathCoords'] = []
-        hasUnique = False
-        for node in nodes:
-            if node['color'] == SPECIALCOLOR:
-                hasUnique = True
-                unique = node
-            else:
-                node['color'] = BLUE
-        if not hasUnique:
-            hasUnique = True
-            unique = nodes[random.randint(0,len(nodes)-1)]
-            unique['color'] = SPECIALCOLOR
-            pathData['path'][0] = unique
-
-    else:
-        unique = pathData['path'][len(pathData['path'])-1]
-        nextStep = getNodeDataByName(unique['edgeData'][random.randint(0,len(unique['edgeData'])-1)],nodes)
-        pathData['pathCoords'].append(nextStep['nodeCoords'])
-        # print(nextStep)
-        pathData['pathString'] += "\n"+str(np.subtract(nextStep['nodeCoords'],unique['nodeCoords']))
-        nextStep['color'] = SPECIALCOLOR
-        pathData['path'][len(pathData['path'])] = nextStep
-
-    path = pathData['path']
-    for index in pathData['path']:
-        r = (((index + 1) / len(path))* SPECIALCOLOR[0]) + (((len(path)-index - 1) / len(path))* BLUE[0])
-        g = (((index + 1) / len(path))* SPECIALCOLOR[1]) + (((len(path)-index - 1) / len(path))* BLUE[1])
-        b = (((index + 1) / len(path))* SPECIALCOLOR[2]) + (((len(path)-index - 1) / len(path))* BLUE[2])
-        pathData['path'][index]['color'] = (r,g,b)
-    if len(pathData['pathCoords']) > 1:
-        lastEdge = [pathData['pathCoords'][-2],pathData['pathCoords'][-1]]
-
-        if len(pathData['animators']) >0:
-            pathData['animators'][-1].close()
-        pathData['animators'].append(animatePath(lastEdge,20,10,display_surface))
-        pathData['animators'][-1].__next__()
-    return pathData
 
 def main():
     pygame.init()
@@ -229,13 +238,9 @@ def main():
     display_surface = pygame.display.set_mode((X, Y))
     pygame.display.set_caption('GraphTesting')
 
-    # font = pygame.font.Font('freesansbold.ttf', 32)
-    # text = font.render('GeeksForGeeks', True, green, blue)
-    # textRect = text.get_rect()
-    # textRect.center = (X // 2, Y // 2)
-
     pathData = {}
     nodes = generateGraph(10)
+    path = Path(nodes)
 
     clock = pygame.time.Clock()
     counter, text = 10, '10'.rjust(3)
@@ -257,7 +262,8 @@ def main():
         # display_surface.blit(text, textRect)
         for event in pygame.event.get():
             if event.type == TAKERANDOMSTEP and not pause:
-                pathData = randomStep(pathData,nodes,display_surface)
+                path.randomStep()
+                # pathData = randomStep(pathData,nodes,display_surface)
                 draw()
             if event.type == ANIMATESTEP:
                 draw()
